@@ -72,34 +72,43 @@ function montarQuery(
   return `[out:json][timeout:${timeoutSeg}];\n${areaDef}(\n${corpo}\n);\nout tags center ${limite};`;
 }
 
+async function tentarEndpoint(endpoint: string, query: string, timeoutMs: number): Promise<any[]> {
+  const res = await fetchComTimeout(
+    endpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
+      },
+      body: `data=${encodeURIComponent(query)}`,
+    },
+    timeoutMs
+  );
+  if (!res.ok) {
+    throw new Error(`${new URL(endpoint).host} respondeu ${res.status}`);
+  }
+  const json = (await res.json()) as { elements?: any[] };
+  return json.elements || [];
+}
+
 async function rodarOverpass(query: string, timeoutMs: number): Promise<any[]> {
   let ultimoErro = "sem endpoints";
-  // Duas rodadas: os servidores do Overpass costumam recusar a primeira
-  // tentativa quando estão sob carga, mas aceitam segundos depois.
+  // Duas rodadas, disparando os 3 espelhos em PARALELO em cada uma (em vez de
+  // um de cada vez): o overpass-api.de é o mais usado e o que mais engasga, e
+  // esperar ele até o timeout antes de sequer tentar os outros já fazia uma
+  // busca de 20 resultados levar 2-3 minutos. Com Promise.any ficamos com o
+  // primeiro espelho que responder.
   for (let rodada = 0; rodada < 2; rodada++) {
-    for (const endpoint of OVERPASS_ENDPOINTS) {
-      try {
-        const res = await fetchComTimeout(
-          endpoint,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-              "User-Agent": USER_AGENT,
-            },
-            body: `data=${encodeURIComponent(query)}`,
-          },
-          timeoutMs
-        );
-        if (!res.ok) {
-          ultimoErro = `${new URL(endpoint).host} respondeu ${res.status}`;
-          continue;
-        }
-        const json = (await res.json()) as { elements?: any[] };
-        return json.elements || [];
-      } catch (err: any) {
-        ultimoErro = `${new URL(endpoint).host}: ${err?.message || err}`;
-      }
+    try {
+      return await Promise.any(
+        OVERPASS_ENDPOINTS.map((endpoint) => tentarEndpoint(endpoint, query, timeoutMs))
+      );
+    } catch (err) {
+      ultimoErro =
+        err instanceof AggregateError
+          ? err.errors.map((e: any) => e?.message || e).join("; ")
+          : (err as any)?.message || String(err);
     }
     if (rodada === 0) await new Promise((r) => setTimeout(r, 1500));
   }
@@ -184,9 +193,13 @@ export async function POST(req: Request) {
     estadoInteiro ? 90 : 50
   );
 
+  // Um pouco acima do [timeout:N] embutido na própria query Overpass (linha
+  // acima), pra não abortar do lado do cliente bem quando o servidor está
+  // prestes a responder. Como os 3 espelhos agora correm em paralelo, isto já
+  // não é mais somado 3x como era na versão sequencial.
   let elementos: any[];
   try {
-    elementos = await rodarOverpass(query, estadoInteiro ? 120000 : 75000);
+    elementos = await rodarOverpass(query, estadoInteiro ? 105000 : 65000);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Erro ao consultar o OpenStreetMap." }, { status: 502 });
   }
