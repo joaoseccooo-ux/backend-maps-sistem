@@ -12,19 +12,23 @@ export async function POST(req: NextRequest) {
   const token = await expectedToken();
   if (!token) {
     // APP_PASSWORD não configurada no ambiente.
+    // 303: força o navegador a virar GET no redirect (senão ele repete o POST
+    // no destino e a página de login/home devolve 405, por só aceitar GET).
     return NextResponse.redirect(
-      new URL(`/login?error=config&next=${encodeURIComponent(next)}`, req.url)
+      new URL(`/login?error=config&next=${encodeURIComponent(next)}`, req.url),
+      303
     );
   }
 
   const configuredPassword = process.env.APP_PASSWORD;
   if (password !== configuredPassword) {
     return NextResponse.redirect(
-      new URL(`/login?error=senha&next=${encodeURIComponent(next)}`, req.url)
+      new URL(`/login?error=senha&next=${encodeURIComponent(next)}`, req.url),
+      303
     );
   }
 
-  const res = NextResponse.redirect(new URL(next || "/", req.url));
+  const res = NextResponse.redirect(new URL(next || "/", req.url), 303);
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,
     secure: true,

@@ -9,9 +9,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Rota de API sem sessão válida: 401 JSON, nunca redirect. Um redirect (307)
+  // preserva o método original — um POST/PATCH/DELETE viraria a mesma
+  // requisição em "/login" (que só aceita GET) e devolveria 405.
+  if (req.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const loginUrl = new URL("/login", req.url);
   loginUrl.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
-  return NextResponse.redirect(loginUrl);
+  // 303: garante GET em "/login" mesmo que a requisição original fosse POST.
+  return NextResponse.redirect(loginUrl, 303);
 }
 
 export const config = {
