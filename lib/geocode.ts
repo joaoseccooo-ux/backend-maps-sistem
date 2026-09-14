@@ -74,3 +74,27 @@ export async function geocodar(cidade: string, estadoNome: string, estadoInteiro
   }
   return loc;
 }
+
+/**
+ * Geocodifica cidade+país fora do Brasil (aba internacional). Sempre exige
+ * cidade — sem equivalente a "estado inteiro" aqui, países europeus não têm
+ * uma API tipo IBGE pra listar cidade por cidade. "countrycodes" restringe
+ * à Nominatim ao país certo, evitando pegar cidade de mesmo nome em outro
+ * lugar do mundo.
+ */
+export async function geocodarInternacional(
+  cidade: string,
+  paisNome: string,
+  codigoPais: string
+): Promise<Local | null> {
+  let loc = await buscarNominatim({
+    city: cidade,
+    country: paisNome,
+    countrycodes: codigoPais,
+    featureType: "settlement",
+  });
+  if (!loc) {
+    loc = await buscarNominatim({ q: `${cidade}, ${paisNome}`, countrycodes: codigoPais });
+  }
+  return loc;
+}

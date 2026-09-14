@@ -21,10 +21,14 @@ model Lead {
   lon             Float?
 
   cidade          String  @default("")
-  estado          String  @default("")
+  estado          String  @default("") // sigla de UF (nacional) ou nome do país (internacional)
   categoria       String  @default("") // o "tipo" buscado
   rating          Float?
   totalAvaliacoes Int?
+
+  // Separa a base de leads do Brasil da de fora — são páginas e listas
+  // diferentes no app, nunca misturadas numa busca ou filtro só.
+  escopo Escopo @default(NACIONAL)
 
   // Derivados, materializados para filtrar rápido no banco.
   temSite     Boolean @default(false)
@@ -50,6 +54,7 @@ model Lead {
   @@index([categoria])
   @@index([temSite])
   @@index([temWhatsApp])
+  @@index([escopo])
 }
 
 model Interaction {
@@ -89,4 +94,9 @@ enum Canal {
   EMAIL
   TELEFONE
   OUTRO
+}
+
+enum Escopo {
+  NACIONAL
+  INTERNACIONAL
 }

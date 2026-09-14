@@ -172,7 +172,9 @@ function LeadDetail({
     onMutate();
   }
 
-  const waLink = toWhatsAppLink(lead.telefone, "");
+  // WhatsApp assume DDI 55 (lib/phone.ts) — não confiável pra número
+  // internacional, então nem oferece o botão nesse caso (foco em e-mail).
+  const waLink = lead.escopo === "INTERNACIONAL" ? null : toWhatsAppLink(lead.telefone, "");
 
   return (
     <div className="flex flex-col gap-5 pb-4">

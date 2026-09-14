@@ -11,7 +11,15 @@ export type BuscaParams = {
   cidade: string;
   quantidade: number;
   estadoInteiro: boolean;
+  /** Só na aba internacional: nome do país, e escopo="INTERNACIONAL". */
+  pais?: string;
+  escopo?: "NACIONAL" | "INTERNACIONAL";
 };
+
+function labelLocal(params: BuscaParams): string {
+  if (params.pais) return `${params.cidade}, ${params.pais}`;
+  return params.estadoInteiro ? params.estado : `${params.cidade}, ${params.estado}`;
+}
 
 export type BuscaJob = {
   id: string;
@@ -100,7 +108,7 @@ async function geocodarUmaVez(params: BuscaParams) {
 /** Dispara uma busca de uma categoria só. Não bloqueia — roda em background. */
 export function iniciarBusca(tipo: string, params: BuscaParams, onDone: () => void) {
   const id = crypto.randomUUID();
-  const label = `${tipo} em ${params.estadoInteiro ? params.estado : `${params.cidade}, ${params.estado}`}`;
+  const label = `${tipo} em ${labelLocal(params)}`;
   jobs = [
     ...jobs,
     { id, label, atual: 1, total: 1, categoriaAtual: tipo, criados: 0, atualizados: 0, status: "rodando" },

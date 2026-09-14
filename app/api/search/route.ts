@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { ESTADOS } from "@/data/estados";
+import { codigoPais } from "@/data/paises-europa";
 import { resolveOsmFilters, normalizar } from "@/lib/osm-tags";
 import { toWhatsAppLink } from "@/lib/phone";
 import { upsertLeadsFromSearch, type SearchRow } from "@/lib/leads";
-import { geocodar, type Local } from "@/lib/geocode";
+import { geocodar, geocodarInternacional, type Local } from "@/lib/geocode";
 import { fetchComTimeout, USER_AGENT } from "@/lib/osm-http";
 
 export const runtime = "nodejs";
@@ -150,17 +151,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Corpo da requisição inválido." }, { status: 400 });
   }
 
-  const { tipo, cidade, estado, quantidade } = body || {};
-  const estadoInteiro = Boolean(body?.estadoInteiro);
-  if (!tipo || !estado || (!estadoInteiro && !cidade)) {
+  const { tipo, cidade, estado, pais, quantidade } = body || {};
+  const internacional = body?.escopo === "INTERNACIONAL";
+  const estadoInteiro = internacional ? false : Boolean(body?.estadoInteiro);
+
+  if (!tipo) {
+    return NextResponse.json({ error: "Informe o tipo de negócio." }, { status: 400 });
+  }
+  if (internacional && (!pais || !cidade)) {
+    return NextResponse.json({ error: "Informe país e cidade." }, { status: 400 });
+  }
+  if (!internacional && (!estado || (!estadoInteiro && !cidade))) {
     return NextResponse.json(
       { error: "Informe tipo de negócio, estado e cidade (ou marque \"estado inteiro\")." },
       { status: 400 }
     );
   }
 
-  const uf = ESTADOS.find((e) => e.sigla === estado);
-  const estadoNome = uf?.nome || String(estado);
+  // "regiaoNome"/"regiaoSalva": o que entra na coluna "estado" do banco e nas
+  // mensagens de erro — nome do estado (BR) ou do país (internacional).
+  const estadoNome = internacional ? String(pais) : ESTADOS.find((e) => e.sigla === estado)?.nome || String(estado);
+  const regiaoSalva = internacional ? String(pais) : String(estado);
   // No modo "estado inteiro" ignoramos o campo quantidade e trazemos tudo até um teto.
   const qtd = estadoInteiro ? 1500 : Math.min(Math.max(Number(quantidade) || 20, 1), 500);
 
@@ -186,7 +197,15 @@ export async function POST(req: Request) {
     loc = body.loc;
   } else {
     try {
-      loc = await geocodar(String(cidade || ""), estadoNome, estadoInteiro);
+      if (internacional) {
+        const codigo = codigoPais(estadoNome);
+        if (!codigo) {
+          return NextResponse.json({ error: `País "${estadoNome}" não está na lista suportada.` }, { status: 400 });
+        }
+        loc = await geocodarInternacional(String(cidade), estadoNome, codigo);
+      } else {
+        loc = await geocodar(String(cidade || ""), estadoNome, estadoInteiro);
+      }
     } catch (err: any) {
       console.error("[search] falha ao geocodificar:", err?.message || err);
       return NextResponse.json(
@@ -290,7 +309,10 @@ export async function POST(req: Request) {
       rating: null,
       totalAvaliacoes: null,
       temSite: !!site,
-      temWhatsApp: toWhatsAppLink(telefone, "") != null,
+      // Fora do Brasil o link do WhatsApp (lib/phone.ts) não sabe detectar o
+      // DDI certo a partir do número — em vez de gerar link errado, o
+      // contato internacional foca em e-mail/telefone puro.
+      temWhatsApp: internacional ? false : toWhatsAppLink(telefone, "") != null,
     });
   }
 
@@ -312,8 +334,9 @@ export async function POST(req: Request) {
   try {
     persistencia = await upsertLeadsFromSearch(selecionados, {
       cidade: estadoInteiro ? "" : String(cidade),
-      estado: String(estado),
+      estado: regiaoSalva,
       categoria: String(tipo),
+      escopo: internacional ? "INTERNACIONAL" : "NACIONAL",
     });
   } catch (err: any) {
     return NextResponse.json(

@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +22,7 @@ import { fetcher } from "@/lib/fetcher";
 import { toast } from "sonner";
 
 export function AppHeader() {
+  const pathname = usePathname();
   const { data, mutate } = useSWR<{ seuNome: string }>("/api/settings", fetcher);
   const [open, setOpen] = useState(false);
   const [valor, setValor] = useState("");
@@ -48,11 +52,37 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between px-4">
-        <div className="flex items-center gap-2 font-semibold">
-          <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-xs text-primary-foreground">
-            BL
-          </span>
-          Buscador de Leads
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 font-semibold">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-xs text-primary-foreground">
+              BL
+            </span>
+            Buscador de Leads
+          </div>
+          <nav className="flex gap-1 rounded-lg border bg-card p-1 text-sm">
+            <Link
+              href="/"
+              className={cn(
+                "rounded-md px-3 py-1 font-medium transition-colors",
+                pathname === "/"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Nacional
+            </Link>
+            <Link
+              href="/internacional"
+              className={cn(
+                "rounded-md px-3 py-1 font-medium transition-colors",
+                pathname === "/internacional"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Internacional
+            </Link>
+          </nav>
         </div>
 
         <Dialog open={open} onOpenChange={setOpen}>

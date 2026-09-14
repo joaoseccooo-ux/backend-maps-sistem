@@ -19,6 +19,8 @@ export async function GET(req: Request) {
     .map((s) => s.trim().toUpperCase())
     .filter((s): s is LeadStatus => (LEAD_STATUSES as readonly string[]).includes(s));
 
+  const escopo = sp.get("escopo") === "INTERNACIONAL" ? "INTERNACIONAL" : "NACIONAL";
+
   const filtro: ListFilter = {
     status: status.length ? status : undefined,
     cidade: sp.get("cidade") || undefined,
@@ -31,6 +33,7 @@ export async function GET(req: Request) {
     semContato: sp.get("semContato") === "1" ? true : undefined,
     cursor: sp.get("cursor") || undefined,
     limit: sp.get("limit") ? Number(sp.get("limit")) : undefined,
+    escopo,
   };
 
   try {

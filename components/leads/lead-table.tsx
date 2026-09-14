@@ -115,7 +115,8 @@ export function LeadTable({
         <TableBody>
           {leads.map((lead) => {
             const ultima = lead.interactions?.[0]?.createdAt ?? lead.contatadoEm;
-            const waLink = toWhatsAppLink(lead.telefone, "");
+            // WhatsApp assume DDI 55 — não confiável pra lead internacional.
+            const waLink = lead.escopo === "INTERNACIONAL" ? null : toWhatsAppLink(lead.telefone, "");
             return (
               <TableRow
                 key={lead.id}

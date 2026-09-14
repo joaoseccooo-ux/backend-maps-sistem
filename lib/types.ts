@@ -20,6 +20,7 @@ export type LeadDTO = {
   cidade: string;
   estado: string;
   categoria: string;
+  escopo: "NACIONAL" | "INTERNACIONAL";
   rating: number | null;
   totalAvaliacoes: number | null;
   temSite: boolean;

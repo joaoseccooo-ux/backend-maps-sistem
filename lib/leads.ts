@@ -1,4 +1,4 @@
-import type { Canal, LeadStatus, Prisma } from "@prisma/client";
+import type { Canal, Escopo, LeadStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 /** Linha crua vinda da busca do OpenStreetMap (app/api/search/route.ts). */
@@ -20,7 +20,7 @@ export type SearchRow = {
   temWhatsApp: boolean;
 };
 
-type SearchMeta = { cidade: string; estado: string; categoria: string };
+type SearchMeta = { cidade: string; estado: string; categoria: string; escopo: Escopo };
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -70,6 +70,7 @@ export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta)
         cidade: r.cidade || meta.cidade,
         estado: meta.estado,
         categoria: meta.categoria,
+        escopo: meta.escopo,
       })),
       skipDuplicates: true,
     });
@@ -117,6 +118,8 @@ export type ListFilter = {
   semContato?: boolean;
   cursor?: string;
   limit?: number;
+  /** Nacional (Brasil) x internacional — as duas listas nunca se misturam. */
+  escopo?: Escopo;
 };
 
 // Ter só site não conta como contato: sem telefone e sem e-mail, ainda falta
@@ -132,6 +135,7 @@ export async function listLeads(filtro: ListFilter) {
   const limit = Math.min(Math.max(filtro.limit ?? 50, 1), 200);
 
   const where: Prisma.LeadWhereInput = {};
+  if (filtro.escopo) where.escopo = filtro.escopo;
   if (filtro.status && filtro.status.length > 0) where.status = { in: filtro.status };
   if (filtro.cidade) where.cidade = filtro.cidade;
   if (filtro.estado) where.estado = filtro.estado;
@@ -205,13 +209,13 @@ export async function addInteraction(leadId: string, canal: Canal, descricao: st
   return interaction;
 }
 
-export async function leadStats() {
+export async function leadStats(escopo: Escopo = "NACIONAL") {
   const [total, comSite, comWhats, semContato, porStatus] = await Promise.all([
-    prisma.lead.count(),
-    prisma.lead.count({ where: { temSite: true } }),
-    prisma.lead.count({ where: { temWhatsApp: true } }),
-    prisma.lead.count({ where: SEM_CONTATO_WHERE }),
-    prisma.lead.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.lead.count({ where: { escopo } }),
+    prisma.lead.count({ where: { escopo, temSite: true } }),
+    prisma.lead.count({ where: { escopo, temWhatsApp: true } }),
+    prisma.lead.count({ where: { escopo, ...SEM_CONTATO_WHERE } }),
+    prisma.lead.groupBy({ by: ["status"], where: { escopo }, _count: { _all: true } }),
   ]);
 
   const status = Object.fromEntries(
@@ -232,9 +236,13 @@ export async function leadStats() {
 /** Cidades que já têm lead salvo pra essa categoria+estado — usado pra pular
  * cidade repetida num "percorrer todas as cidades" (não adianta buscar de
  * novo onde já tem resultado). */
-export async function cidadesComCategoria(estado: string, categoria: string): Promise<string[]> {
+export async function cidadesComCategoria(
+  estado: string,
+  categoria: string,
+  escopo: Escopo = "NACIONAL"
+): Promise<string[]> {
   const rows = await prisma.lead.findMany({
-    where: { estado, categoria, cidade: { not: "" } },
+    where: { estado, categoria, escopo, cidade: { not: "" } },
     distinct: ["cidade"],
     select: { cidade: true },
   });
@@ -242,22 +250,22 @@ export async function cidadesComCategoria(estado: string, categoria: string): Pr
 }
 
 /** Cidades e categorias já presentes no banco, para popular os selects de filtro. */
-export async function facetas() {
+export async function facetas(escopo: Escopo = "NACIONAL") {
   const [cidades, categorias, estados] = await Promise.all([
     prisma.lead.findMany({
-      where: { cidade: { not: "" } },
+      where: { escopo, cidade: { not: "" } },
       distinct: ["cidade"],
       select: { cidade: true },
       orderBy: { cidade: "asc" },
     }),
     prisma.lead.findMany({
-      where: { categoria: { not: "" } },
+      where: { escopo, categoria: { not: "" } },
       distinct: ["categoria"],
       select: { categoria: true },
       orderBy: { categoria: "asc" },
     }),
     prisma.lead.findMany({
-      where: { estado: { not: "" } },
+      where: { escopo, estado: { not: "" } },
       distinct: ["estado"],
       select: { estado: true },
       orderBy: { estado: "asc" },

@@ -14,10 +14,16 @@ export function LeadFilters({
   filtro,
   onChange,
   facetas,
+  estadoLabel = "Estado",
+  traduzirEstado = true,
 }: {
   filtro: Filtro;
   onChange: (f: Filtro) => void;
   facetas?: StatsResponse["facetas"];
+  /** Rótulo do filtro de "estado" — "País" na aba internacional. */
+  estadoLabel?: string;
+  /** Traduz sigla de UF pro nome completo — não faz sentido pra país (já vem por extenso). */
+  traduzirEstado?: boolean;
 }) {
   const set = (patch: Partial<Filtro>) => onChange({ ...filtro, ...patch });
 
@@ -77,7 +83,7 @@ export function LeadFilters({
       </Grupo>
 
       {facetas && facetas.estados.length > 0 && (
-        <Grupo titulo="Estado">
+        <Grupo titulo={estadoLabel}>
           <select
             value={filtro.estado}
             onChange={(e) => set({ estado: e.target.value })}
@@ -86,7 +92,7 @@ export function LeadFilters({
             <option value="">Todos</option>
             {facetas.estados.map((uf) => (
               <option key={uf} value={uf}>
-                {ESTADOS.find((e) => e.sigla === uf)?.nome ?? uf}
+                {traduzirEstado ? ESTADOS.find((e) => e.sigla === uf)?.nome ?? uf : uf}
               </option>
             ))}
           </select>
