@@ -202,11 +202,18 @@ export async function POST(req: Request) {
 
   const vistos = new Set<string>();
   const leads: SearchRow[] = [];
+  let semNome = 0;
 
   for (const el of elementos) {
     const t = el.tags || {};
-    const nome: string = t.name || t["name:pt"] || t.brand || "";
-    if (!nome) continue;
+    // Profissional individual (psicólogo, nutricionista etc.) costuma vir só
+    // com "operator" (nome de quem atende), sem "name" — sem esse fallback
+    // essas categorias voltavam vazias mesmo com o Overpass achando elementos.
+    const nome: string = t.name || t["name:pt"] || t.brand || t.operator || "";
+    if (!nome) {
+      semNome++;
+      continue;
+    }
 
     const lat: number | null = el.lat ?? el.center?.lat ?? null;
     const lon: number | null = el.lon ?? el.center?.lon ?? null;
@@ -257,6 +264,11 @@ export async function POST(req: Request) {
   leads.sort((a, b) => pontos(b) - pontos(a) || a.nome.localeCompare(b.nome, "pt-BR"));
 
   const selecionados = leads.slice(0, qtd);
+
+  console.log(
+    `[search] tipo="${tipo}" local="${estadoInteiro ? estadoNome : `${cidade}, ${estadoNome}`}" ` +
+      `filtros=${filters.length} overpass=${elementos.length} semNome=${semNome} leads=${leads.length} selecionados=${selecionados.length}`
+  );
 
   let persistencia = { criados: 0, atualizados: 0 };
   try {
