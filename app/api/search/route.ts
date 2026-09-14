@@ -77,23 +77,52 @@ async function tentarEndpoint(endpoint: string, query: string, timeoutMs: number
   return json.elements || [];
 }
 
+/**
+ * Corre todos os espelhos em paralelo, mas NÃO aceita cegamente o primeiro
+ * que responder (era isso que o Promise.any fazia): nem todo espelho mantém
+ * o índice de "area" do Overpass atualizado, e um espelho sem esse índice
+ * devolve 200 com elements:[] em menos de 1s — sucesso técnico, resultado
+ * errado. O overpass-api.de (oficial) é o mais lento pra buscas grandes
+ * (pode levar 20-30s numa busca por estado inteiro) mas é o que tem o
+ * índice completo. Então: qualquer resposta NÃO-vazia vence na hora; uma
+ * resposta vazia só é aceita depois que TODOS já responderam (ou falharam).
+ */
+async function primeiroComResultado(query: string, timeoutMs: number): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    const erros: string[] = [];
+    let vazioEncontrado = false;
+    let pendentes = OVERPASS_ENDPOINTS.length;
+
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+      tentarEndpoint(endpoint, query, timeoutMs)
+        .then((elementos) => {
+          if (elementos.length > 0) {
+            resolve(elementos);
+            return;
+          }
+          vazioEncontrado = true;
+          pendentes--;
+          if (pendentes === 0) resolve([]);
+        })
+        .catch((err) => {
+          erros.push(err?.message || String(err));
+          pendentes--;
+          if (pendentes === 0) {
+            if (vazioEncontrado) resolve([]);
+            else reject(new Error(erros.join("; ")));
+          }
+        });
+    }
+  });
+}
+
 async function rodarOverpass(query: string, timeoutMs: number): Promise<any[]> {
   let ultimoErro = "sem endpoints";
-  // Duas rodadas, disparando os 3 espelhos em PARALELO em cada uma (em vez de
-  // um de cada vez): o overpass-api.de é o mais usado e o que mais engasga, e
-  // esperar ele até o timeout antes de sequer tentar os outros já fazia uma
-  // busca de 20 resultados levar 2-3 minutos. Com Promise.any ficamos com o
-  // primeiro espelho que responder.
   for (let rodada = 0; rodada < 2; rodada++) {
     try {
-      return await Promise.any(
-        OVERPASS_ENDPOINTS.map((endpoint) => tentarEndpoint(endpoint, query, timeoutMs))
-      );
-    } catch (err) {
-      ultimoErro =
-        err instanceof AggregateError
-          ? err.errors.map((e: any) => e?.message || e).join("; ")
-          : (err as any)?.message || String(err);
+      return await primeiroComResultado(query, timeoutMs);
+    } catch (err: any) {
+      ultimoErro = err?.message || String(err);
     }
     if (rodada === 0) await new Promise((r) => setTimeout(r, 1500));
   }
