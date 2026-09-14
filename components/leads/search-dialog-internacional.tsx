@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Search, X } from "lucide-react";
 import { PAISES_EUROPA } from "@/data/paises-europa";
+import { CIDADES_EUROPA } from "@/data/cidades-europa";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -27,9 +28,18 @@ export function SearchDialogInternacional({ onDone }: { onDone: () => void }) {
   const [categorias, setCategorias] = useState<string[]>([]);
   const [pais, setPais] = useState("");
   const [cidade, setCidade] = useState("");
+  const [cidadeManual, setCidadeManual] = useState(false);
   const [quantidade, setQuantidade] = useState(20);
   const [erro, setErro] = useState<string | null>(null);
   const [todasCategorias, setTodasCategorias] = useState(false);
+
+  const cidadesDoPais = CIDADES_EUROPA[pais] || [];
+
+  function trocarPais(novoPais: string) {
+    setPais(novoPais);
+    setCidade("");
+    setCidadeManual(false);
+  }
 
   function adicionarCategoria() {
     const v = tipo.trim();
@@ -181,7 +191,7 @@ export function SearchDialogInternacional({ onDone }: { onDone: () => void }) {
                 <select
                   id="pais"
                   value={pais}
-                  onChange={(e) => setPais(e.target.value)}
+                  onChange={(e) => trocarPais(e.target.value)}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   <option value="">Selecione…</option>
@@ -194,13 +204,38 @@ export function SearchDialogInternacional({ onDone }: { onDone: () => void }) {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="cidade-intl">Cidade</Label>
-                <Input
-                  id="cidade-intl"
-                  value={cidade}
-                  disabled={!pais}
-                  onChange={(e) => setCidade(e.target.value)}
-                  placeholder={pais ? "Digite a cidade" : "Escolha o país"}
-                />
+                {cidadeManual || cidadesDoPais.length === 0 ? (
+                  <Input
+                    id="cidade-intl"
+                    value={cidade}
+                    disabled={!pais}
+                    onChange={(e) => setCidade(e.target.value)}
+                    placeholder={pais ? "Digite a cidade" : "Escolha o país"}
+                  />
+                ) : (
+                  <select
+                    id="cidade-intl"
+                    value={cidade}
+                    onChange={(e) => setCidade(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  >
+                    <option value="">Selecione…</option>
+                    {cidadesDoPais.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {pais && (
+                  <button
+                    type="button"
+                    onClick={() => setCidadeManual((v) => !v)}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    {cidadeManual ? "Escolher da lista" : "Não achei minha cidade, digitar"}
+                  </button>
+                )}
               </div>
             </div>
 
