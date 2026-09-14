@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Search, X } from "lucide-react";
-import { ESTADOS } from "@/data/estados";
+import { ESTADOS, UF_CODIGO_IBGE } from "@/data/estados";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -103,14 +103,44 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
     }
     setCidade("");
     let cancel = false;
-    fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${estado}/municipios`)
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      })
-      .then((data: Array<{ nome: string }>) => {
+    const codigoUf = UF_CODIGO_IBGE[estado];
+
+    // Cidades e população vêm de dois endpoints do IBGE, buscados em
+    // paralelo. Se o de população falhar, cai pra ordem alfabética — não
+    // trava a seleção de cidade por causa disso.
+    Promise.all([
+      fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${estado}/municipios`).then(
+        (r) => {
+          if (!r.ok) throw new Error();
+          return r.json() as Promise<Array<{ id: number; nome: string }>>;
+        }
+      ),
+      fetch(
+        `https://servicodados.ibge.gov.br/api/v3/agregados/6579/periodos/-1/variaveis/9324?localidades=N6%5BN3%5B${codigoUf}%5D%5D`
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ])
+      .then(([municipios, dadosPop]) => {
         if (cancel) return;
-        setCidades(data.map((m) => m.nome).sort((a, b) => a.localeCompare(b, "pt-BR")));
+
+        const populacaoPorId = new Map<number, number>();
+        const serie = dadosPop?.[0]?.resultados?.[0]?.series as
+          | Array<{ localidade: { id: string }; serie: Record<string, string> }>
+          | undefined;
+        for (const s of serie || []) {
+          const ano = Object.keys(s.serie)[0];
+          populacaoPorId.set(Number(s.localidade.id), Number(s.serie[ano]) || 0);
+        }
+
+        const nomes =
+          populacaoPorId.size > 0
+            ? [...municipios]
+                .sort((a, b) => (populacaoPorId.get(b.id) ?? 0) - (populacaoPorId.get(a.id) ?? 0))
+                .map((m) => m.nome)
+            : municipios.map((m) => m.nome).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+        setCidades(nomes);
         setCidadeManual(false);
       })
       .catch(() => {
