@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { geocodar, nomeLocalParaGeocodar } from "@/lib/geocode";
+import { geocodar, nomeEstado } from "@/lib/geocode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,9 +23,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Informe estado e cidade (ou marque \"estado inteiro\")." }, { status: 400 });
   }
 
+  const estadoNome = nomeEstado(String(estado));
   let loc;
   try {
-    loc = await geocodar(nomeLocalParaGeocodar(String(cidade || ""), String(estado), estadoInteiro));
+    loc = await geocodar(String(cidade || ""), estadoNome, estadoInteiro);
   } catch (err: any) {
     console.error("[geocode] falha ao geocodificar:", err?.message || err);
     return NextResponse.json(
@@ -37,8 +38,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error: estadoInteiro
-          ? `Não encontrei o estado "${estado}" no OpenStreetMap.`
-          : `Não encontrei "${cidade}, ${estado}" no OpenStreetMap. Confira o nome da cidade.`,
+          ? `Não encontrei o estado "${estadoNome}" no OpenStreetMap.`
+          : `Não encontrei "${cidade}, ${estadoNome}" no OpenStreetMap. Confira o nome da cidade.`,
       },
       { status: 404 }
     );

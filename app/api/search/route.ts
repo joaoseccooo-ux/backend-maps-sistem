@@ -3,7 +3,7 @@ import { ESTADOS } from "@/data/estados";
 import { resolveOsmFilters, normalizar } from "@/lib/osm-tags";
 import { toWhatsAppLink } from "@/lib/phone";
 import { upsertLeadsFromSearch, type SearchRow } from "@/lib/leads";
-import { geocodar, nomeLocalParaGeocodar, type Local } from "@/lib/geocode";
+import { geocodar, type Local } from "@/lib/geocode";
 import { fetchComTimeout, USER_AGENT } from "@/lib/osm-http";
 
 export const runtime = "nodejs";
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
     loc = body.loc;
   } else {
     try {
-      loc = await geocodar(nomeLocalParaGeocodar(String(cidade || ""), String(estado), estadoInteiro));
+      loc = await geocodar(String(cidade || ""), estadoNome, estadoInteiro);
     } catch (err: any) {
       console.error("[search] falha ao geocodificar:", err?.message || err);
       return NextResponse.json(
