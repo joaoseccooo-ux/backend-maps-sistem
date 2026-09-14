@@ -4,6 +4,9 @@
 // puro no cookie.
 
 export const AUTH_COOKIE = "leadfinder_auth";
+// Senha separada da principal — quem tem a senha nacional não entra na
+// internacional (e vice-versa) só com isso; precisa saber as duas.
+export const AUTH_COOKIE_INTL = "leadfinder_auth_intl";
 
 async function hmac(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -30,6 +33,20 @@ export async function expectedToken(): Promise<string | null> {
 export async function isValidToken(token: string | undefined | null): Promise<boolean> {
   if (!token) return false;
   const expected = await expectedToken();
+  if (!expected) return false;
+  return token === expected;
+}
+
+/** Token válido pra área internacional — senha própria (APP_PASSWORD_INTERNACIONAL). */
+export async function expectedTokenIntl(): Promise<string | null> {
+  const password = process.env.APP_PASSWORD_INTERNACIONAL;
+  if (!password) return null;
+  return hmac(password, "leadfinder-session-intl");
+}
+
+export async function isValidTokenIntl(token: string | undefined | null): Promise<boolean> {
+  if (!token) return false;
+  const expected = await expectedTokenIntl();
   if (!expected) return false;
   return token === expected;
 }
