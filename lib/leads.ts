@@ -222,6 +222,18 @@ export async function leadStats() {
   };
 }
 
+/** Cidades que já têm lead salvo pra essa categoria+estado — usado pra pular
+ * cidade repetida num "percorrer todas as cidades" (não adianta buscar de
+ * novo onde já tem resultado). */
+export async function cidadesComCategoria(estado: string, categoria: string): Promise<string[]> {
+  const rows = await prisma.lead.findMany({
+    where: { estado, categoria, cidade: { not: "" } },
+    distinct: ["cidade"],
+    select: { cidade: true },
+  });
+  return rows.map((r) => r.cidade);
+}
+
 /** Cidades e categorias já presentes no banco, para popular os selects de filtro. */
 export async function facetas() {
   const [cidades, categorias, estados] = await Promise.all([

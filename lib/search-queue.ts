@@ -217,3 +217,109 @@ export function iniciarBuscaTodasCategorias(
 
   return id;
 }
+
+/**
+ * Percorre TODAS as cidades de um estado buscando uma categoria só, uma
+ * cidade por vez — pula cidade que já tem lead dessa categoria salvo (não
+ * repete o que já existe) e espera um pouco entre cada chamada pra não
+ * exagerar na Nominatim/Overpass (cada cidade geocodifica uma área
+ * diferente, então não dá pra reaproveitar como no multi-categoria).
+ * Cancelável, roda em background.
+ */
+export function iniciarBuscaPorCidades(
+  tipo: string,
+  estado: string,
+  quantidade: number,
+  todasAsCidades: string[],
+  onDone: () => void
+) {
+  const id = crypto.randomUUID();
+  const canceladoRef = { current: false };
+  canceladas.set(id, canceladoRef);
+  const label = `${tipo} em todas as cidades de ${estado}`;
+  jobs = [
+    ...jobs,
+    {
+      id,
+      label,
+      atual: 0,
+      total: todasAsCidades.length,
+      categoriaAtual: "",
+      criados: 0,
+      atualizados: 0,
+      status: "rodando",
+      falhas: [],
+    },
+  ];
+  emit();
+
+  (async () => {
+    let jaFeitas = new Set<string>();
+    try {
+      const res = await fetch(
+        `/api/leads/cidades-buscadas?estado=${encodeURIComponent(estado)}&categoria=${encodeURIComponent(tipo)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      jaFeitas = new Set((data.cidades || []).map((c: string) => c.toLowerCase()));
+    } catch {
+      // se a checagem falhar, segue sem pular nenhuma — pior caso é repetir
+      // uma cidade (sem duplicar lead, só desperdiça uma chamada).
+    }
+
+    const pendentes = todasAsCidades.filter((c) => !jaFeitas.has(c.toLowerCase()));
+    patch(id, { total: pendentes.length });
+
+    if (pendentes.length === 0) {
+      patch(id, { status: "concluido" });
+      toast.info(`${label}: todas as cidades já têm lead dessa categoria.`);
+      setTimeout(() => remover(id), 6000);
+      return;
+    }
+
+    let totalCriados = 0;
+    let totalAtualizados = 0;
+    const falhas: string[] = [];
+    for (let i = 0; i < pendentes.length; i++) {
+      if (canceladoRef.current) break;
+      const cidade = pendentes[i];
+      patch(id, { atual: i + 1, categoriaAtual: cidade });
+      try {
+        const r = await buscarUmaCategoria(tipo, { estado, cidade, quantidade, estadoInteiro: false });
+        totalCriados += r.criados || 0;
+        totalAtualizados += r.atualizados || 0;
+        patch(id, { criados: totalCriados, atualizados: totalAtualizados });
+        onDone();
+      } catch (err: any) {
+        // uma cidade falhando não trava o loop — segue pra próxima, mas a
+        // falha precisa aparecer no fim (mesmo motivo do multi-categoria).
+        falhas.push(`${cidade}: ${err?.message || "erro na busca"}`);
+        patch(id, { falhas: [...falhas] });
+      }
+      if (i < pendentes.length - 1 && !canceladoRef.current) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
+    const cancelado = canceladoRef.current;
+    patch(id, { status: cancelado ? "cancelado" : "concluido" });
+    const resumoCriados = `${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}`;
+    if (falhas.length > 0) {
+      const amostra = falhas.slice(0, 5).join("; ") + (falhas.length > 5 ? "…" : "");
+      toast.error(
+        `${label}: ${resumoCriados}, mas ${falhas.length} ${
+          falhas.length === 1 ? "cidade falhou" : "cidades falharam"
+        } — ${amostra}`
+      );
+    } else {
+      toast[totalCriados > 0 ? "success" : "info"](
+        cancelado
+          ? `${label} (interrompida): ${resumoCriados}`
+          : `${label}: ${resumoCriados}` +
+              (totalAtualizados > 0 ? ` (${totalAtualizados} já estavam na lista)` : "")
+      );
+    }
+    setTimeout(() => remover(id), falhas.length > 0 ? 12000 : 6000);
+  })();
+
+  return id;
+}

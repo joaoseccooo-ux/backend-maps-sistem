@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { iniciarBusca, iniciarBuscaTodasCategorias } from "@/lib/search-queue";
+import { iniciarBusca, iniciarBuscaTodasCategorias, iniciarBuscaPorCidades } from "@/lib/search-queue";
 import { BuscaQueuePanel } from "@/components/leads/busca-queue-panel";
 
 // Ordem = prioridade de quem mais precisa/se beneficia de um site, do maior
@@ -91,6 +91,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
   const [quantidade, setQuantidade] = useState(20);
   const [erro, setErro] = useState<string | null>(null);
   const [todasCategorias, setTodasCategorias] = useState(false);
+  const [percorrerCidades, setPercorrerCidades] = useState(false);
 
   useEffect(() => {
     if (!estado) {
@@ -178,6 +179,25 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!estado) return setErro("Selecione o estado.");
+
+    // O que ainda está no campo de texto (não confirmado com Enter/+) entra
+    // na busca também — não obriga a clicar em "+" pra um tipo só.
+    const pendente = tipo.trim();
+    const todas = pendente && !categorias.some((c) => c.toLowerCase() === pendente.toLowerCase())
+      ? [...categorias, pendente]
+      : categorias;
+
+    if (percorrerCidades) {
+      if (todas.length !== 1) return setErro('"Percorrer todas as cidades" só funciona com uma categoria só.');
+      if (cidades.length === 0) return setErro("Escolha o estado e espere a lista de cidades carregar.");
+      setErro(null);
+      iniciarBuscaPorCidades(todas[0], estado, quantidade, cidades, onDone);
+      setOpen(false);
+      setTipo("");
+      setCategorias([]);
+      return;
+    }
+
     if (!estadoInteiro && !cidade.trim())
       return setErro('Escolha a cidade ou marque "estado inteiro".');
 
@@ -188,13 +208,6 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
     if (todasCategorias) {
       iniciarBuscaTodasCategorias(SUGESTOES_TIPO, params, onDone, `Todas as categorias em ${local}`);
     } else {
-      // O que ainda está no campo de texto (não confirmado com Enter/+)
-      // entra na busca também — não obriga a clicar em "+" pra um tipo só.
-      const pendente = tipo.trim();
-      const todas = pendente && !categorias.some((c) => c.toLowerCase() === pendente.toLowerCase())
-        ? [...categorias, pendente]
-        : categorias;
-
       if (todas.length === 0) return setErro("Preencha ao menos um tipo de negócio.");
 
       if (todas.length === 1) {
@@ -244,7 +257,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={todasCategorias || !tipo.trim()}
+                  disabled={todasCategorias || percorrerCidades || !tipo.trim()}
                   onClick={adicionarCategoria}
                 >
                   Adicionar
@@ -285,6 +298,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
             <label className="flex items-start gap-2 text-sm">
               <Checkbox
                 checked={todasCategorias}
+                disabled={percorrerCidades}
                 onCheckedChange={(v) => setTodasCategorias(v === true)}
                 className="mt-0.5"
               />
@@ -295,6 +309,27 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
                   {estadoInteiro ? " no estado inteiro" : " nessa cidade"}, uma de cada vez. Pode
                   levar {estadoInteiro ? "bastante tempo (até horas)" : "vários minutos"} — dá pra
                   parar no meio pelo card de progresso.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                checked={percorrerCidades}
+                disabled={!estado || todasCategorias}
+                onCheckedChange={(v) => {
+                  const checado = v === true;
+                  setPercorrerCidades(checado);
+                  if (checado) setEstadoInteiro(false);
+                }}
+                className="mt-0.5"
+              />
+              <span>
+                Percorrer todas as cidades do estado (sem repetir)
+                <span className="block text-xs text-muted-foreground">
+                  Só com uma categoria. Passa cidade por cidade dentro do estado escolhido, pulando
+                  as que já têm lead dessa categoria salvo. Sem pressa: espera um pouco entre cada
+                  cidade pra não sobrecarregar o OpenStreetMap. Dá pra parar no meio.
                 </span>
               </span>
             </label>
@@ -322,7 +357,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
                   <Input
                     id="cidade"
                     value={cidade}
-                    disabled={!estado || estadoInteiro}
+                    disabled={!estado || estadoInteiro || percorrerCidades}
                     onChange={(e) => setCidade(e.target.value)}
                     placeholder={estado ? "Digite a cidade" : "Escolha o estado"}
                   />
@@ -330,7 +365,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
                   <select
                     id="cidade"
                     value={cidade}
-                    disabled={estadoInteiro}
+                    disabled={estadoInteiro || percorrerCidades}
                     onChange={(e) => setCidade(e.target.value)}
                     className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   >
@@ -348,6 +383,7 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
             <label className="flex items-start gap-2 text-sm">
               <Checkbox
                 checked={estadoInteiro}
+                disabled={percorrerCidades}
                 onCheckedChange={(v) => setEstadoInteiro(v === true)}
                 className="mt-0.5"
               />
@@ -376,10 +412,14 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
                   }
                   className="w-28"
                 />
-                {quantidade > 40 && (
-                  <p className="text-xs text-muted-foreground">
-                    Pedidos grandes trazem mais elementos do Overpass e podem demorar mais.
-                  </p>
+                {percorrerCidades ? (
+                  <p className="text-xs text-muted-foreground">Esse teto vale por cidade, não no total.</p>
+                ) : (
+                  quantidade > 40 && (
+                    <p className="text-xs text-muted-foreground">
+                      Pedidos grandes trazem mais elementos do Overpass e podem demorar mais.
+                    </p>
+                  )
                 )}
               </div>
             )}
@@ -388,11 +428,13 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
 
             <Button type="submit" className="w-full gap-2">
               <Search className="h-4 w-4" />
-              {todasCategorias
-                ? "Buscar todas as categorias"
-                : categorias.length > 0
-                  ? `Buscar ${categorias.length + (tipo.trim() ? 1 : 0)} categorias`
-                  : "Buscar"}
+              {percorrerCidades
+                ? "Percorrer cidades"
+                : todasCategorias
+                  ? "Buscar todas as categorias"
+                  : categorias.length > 0
+                    ? `Buscar ${categorias.length + (tipo.trim() ? 1 : 0)} categorias`
+                    : "Buscar"}
             </Button>
           </form>
         </DialogContent>
