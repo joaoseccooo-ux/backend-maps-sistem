@@ -267,8 +267,12 @@ export async function POST(req: Request) {
 
   console.log(
     `[search] tipo="${tipo}" local="${estadoInteiro ? estadoNome : `${cidade}, ${estadoNome}`}" ` +
+      `loc=${loc.osmType}/${loc.osmId} bbox=${loc.bbox.join(",")} ` +
       `filtros=${filters.length} overpass=${elementos.length} semNome=${semNome} leads=${leads.length} selecionados=${selecionados.length}`
   );
+  if (elementos.length === 0) {
+    console.log(`[search] query vazia, query completa: ${query}`);
+  }
 
   let persistencia = { criados: 0, atualizados: 0 };
   try {
