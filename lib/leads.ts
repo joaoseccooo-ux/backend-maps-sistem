@@ -1,0 +1,250 @@
+import type { Canal, LeadStatus, Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+
+/** Linha crua vinda da busca do OpenStreetMap (app/api/search/route.ts). */
+export type SearchRow = {
+  osmId: string;
+  nome: string;
+  endereco: string;
+  telefone: string;
+  site: string;
+  googleMapsUrl: string;
+  lat: number | null;
+  lon: number | null;
+  cidade: string;
+  rating: number | null;
+  totalAvaliacoes: number | null;
+  temSite: boolean;
+  temWhatsApp: boolean;
+};
+
+type SearchMeta = { cidade: string; estado: string; categoria: string };
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Grava os resultados de uma busca. Cria os leads novos e atualiza só os
+ * campos de dados (nome/telefone/site/...) dos que já existem — nunca mexe em
+ * status, notas, e-mail ou favorito.
+ */
+export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta) {
+  if (rows.length === 0) return { criados: 0, atualizados: 0 };
+
+  const ids = rows.map((r) => r.osmId);
+  const existentes = new Set(
+    (
+      await prisma.lead.findMany({
+        where: { osmId: { in: ids } },
+        select: { osmId: true },
+      })
+    ).map((l) => l.osmId)
+  );
+
+  const novos = rows.filter((r) => !existentes.has(r.osmId));
+  const atualizar = rows.filter((r) => existentes.has(r.osmId));
+
+  if (novos.length > 0) {
+    await prisma.lead.createMany({
+      data: novos.map((r) => ({
+        osmId: r.osmId,
+        nome: r.nome,
+        endereco: r.endereco,
+        telefone: r.telefone,
+        site: r.site,
+        googleMapsUrl: r.googleMapsUrl,
+        lat: r.lat,
+        lon: r.lon,
+        rating: r.rating,
+        totalAvaliacoes: r.totalAvaliacoes,
+        temSite: r.temSite,
+        temWhatsApp: r.temWhatsApp,
+        cidade: r.cidade || meta.cidade,
+        estado: meta.estado,
+        categoria: meta.categoria,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  for (const grupo of chunk(atualizar, 50)) {
+    await Promise.all(
+      grupo.map((r) =>
+        prisma.lead.update({
+          where: { osmId: r.osmId },
+          data: {
+            nome: r.nome,
+            endereco: r.endereco,
+            telefone: r.telefone,
+            site: r.site,
+            googleMapsUrl: r.googleMapsUrl,
+            lat: r.lat,
+            lon: r.lon,
+            rating: r.rating,
+            totalAvaliacoes: r.totalAvaliacoes,
+            temSite: r.temSite,
+            temWhatsApp: r.temWhatsApp,
+            ...(r.cidade ? { cidade: r.cidade } : {}),
+          },
+        })
+      )
+    );
+  }
+
+  return { criados: novos.length, atualizados: atualizar.length };
+}
+
+export type ListFilter = {
+  status?: LeadStatus[];
+  cidade?: string;
+  estado?: string;
+  categoria?: string;
+  temSite?: boolean;
+  temWhatsApp?: boolean;
+  favorito?: boolean;
+  q?: string;
+  /** true = só leads sem telefone, e-mail e site (nenhum contato aparente). */
+  semContato?: boolean;
+  cursor?: string;
+  limit?: number;
+};
+
+/** Nenhum telefone, e-mail nem site: não há como abrir WhatsApp, mandar e-mail ou buscar contato no site. */
+const SEM_CONTATO_WHERE: Prisma.LeadWhereInput = {
+  telefone: "",
+  site: "",
+  OR: [{ email: null }, { email: "" }],
+};
+
+export async function listLeads(filtro: ListFilter) {
+  const limit = Math.min(Math.max(filtro.limit ?? 50, 1), 200);
+
+  const where: Prisma.LeadWhereInput = {};
+  if (filtro.status && filtro.status.length > 0) where.status = { in: filtro.status };
+  if (filtro.cidade) where.cidade = filtro.cidade;
+  if (filtro.estado) where.estado = filtro.estado;
+  if (filtro.categoria) where.categoria = filtro.categoria;
+  if (typeof filtro.temSite === "boolean") where.temSite = filtro.temSite;
+  if (typeof filtro.temWhatsApp === "boolean") where.temWhatsApp = filtro.temWhatsApp;
+  if (typeof filtro.favorito === "boolean") where.favorito = filtro.favorito;
+  if (filtro.q) where.nome = { contains: filtro.q, mode: "insensitive" };
+  if (filtro.semContato) {
+    Object.assign(where, SEM_CONTATO_WHERE);
+  } else {
+    where.NOT = SEM_CONTATO_WHERE;
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.lead.count({ where }),
+    prisma.lead.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(filtro.cursor ? { cursor: { id: filtro.cursor }, skip: 1 } : {}),
+      include: {
+        interactions: { orderBy: { createdAt: "desc" }, take: 1 },
+        _count: { select: { interactions: true } },
+      },
+    }),
+  ]);
+
+  const temMais = rows.length > limit;
+  const leads = temMais ? rows.slice(0, limit) : rows;
+
+  return {
+    leads,
+    total,
+    nextCursor: temMais ? leads[leads.length - 1].id : null,
+  };
+}
+
+export function getLead(id: string) {
+  return prisma.lead.findUnique({
+    where: { id },
+    include: { interactions: { orderBy: { createdAt: "desc" } } },
+  });
+}
+
+export function updateLead(id: string, patch: Prisma.LeadUpdateInput) {
+  return prisma.lead.update({ where: { id }, data: patch });
+}
+
+export function deleteLead(id: string) {
+  return prisma.lead.delete({ where: { id } });
+}
+
+/** Registra um contato. Se o lead ainda está em NOVO, promove para CONTATADO. */
+export async function addInteraction(leadId: string, canal: Canal, descricao: string) {
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { status: true, contatadoEm: true },
+  });
+  if (!lead) throw new Error("Lead não encontrado");
+
+  const data: Prisma.LeadUpdateInput = {};
+  if (lead.status === "NOVO") data.status = "CONTATADO";
+  if (!lead.contatadoEm) data.contatadoEm = new Date();
+
+  const [interaction] = await prisma.$transaction([
+    prisma.interaction.create({ data: { leadId, canal, descricao } }),
+    prisma.lead.update({ where: { id: leadId }, data }),
+  ]);
+
+  return interaction;
+}
+
+export async function leadStats() {
+  const [total, comSite, comWhats, semContato, porStatus] = await Promise.all([
+    prisma.lead.count(),
+    prisma.lead.count({ where: { temSite: true } }),
+    prisma.lead.count({ where: { temWhatsApp: true } }),
+    prisma.lead.count({ where: SEM_CONTATO_WHERE }),
+    prisma.lead.groupBy({ by: ["status"], _count: { _all: true } }),
+  ]);
+
+  const status = Object.fromEntries(
+    porStatus.map((r) => [r.status, r._count._all])
+  ) as Record<LeadStatus, number>;
+
+  return {
+    total,
+    comSite,
+    semSite: total - comSite,
+    comWhats,
+    semWhats: total - comWhats,
+    semContato,
+    status,
+  };
+}
+
+/** Cidades e categorias já presentes no banco, para popular os selects de filtro. */
+export async function facetas() {
+  const [cidades, categorias, estados] = await Promise.all([
+    prisma.lead.findMany({
+      where: { cidade: { not: "" } },
+      distinct: ["cidade"],
+      select: { cidade: true },
+      orderBy: { cidade: "asc" },
+    }),
+    prisma.lead.findMany({
+      where: { categoria: { not: "" } },
+      distinct: ["categoria"],
+      select: { categoria: true },
+      orderBy: { categoria: "asc" },
+    }),
+    prisma.lead.findMany({
+      where: { estado: { not: "" } },
+      distinct: ["estado"],
+      select: { estado: true },
+      orderBy: { estado: "asc" },
+    }),
+  ]);
+  return {
+    cidades: cidades.map((c) => c.cidade),
+    categorias: categorias.map((c) => c.categoria),
+    estados: estados.map((e) => e.estado),
+  };
+}

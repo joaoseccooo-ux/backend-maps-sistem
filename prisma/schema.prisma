@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model Lead {
+  id              String  @id @default(cuid())
+  osmId           String  @unique // "node/123" — chave de dedupe vinda da busca
+
+  nome            String
+  endereco        String  @default("")
+  telefone        String  @default("")
+  site            String  @default("")
+  googleMapsUrl   String  @default("")
+  lat             Float?
+  lon             Float?
+
+  cidade          String  @default("")
+  estado          String  @default("")
+  categoria       String  @default("") // o "tipo" buscado
+  rating          Float?
+  totalAvaliacoes Int?
+
+  // Derivados, materializados para filtrar rápido no banco.
+  temSite     Boolean @default(false)
+  temWhatsApp Boolean @default(false)
+
+  // Enriquecimento
+  email       String?
+  emailStatus EmailStatus @default(NAO_BUSCADO)
+
+  // Funil
+  status      LeadStatus @default(NOVO)
+  favorito    Boolean    @default(false)
+  notas       String     @default("")
+  contatadoEm DateTime?
+
+  interactions Interaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([cidade])
+  @@index([categoria])
+  @@index([temSite])
+  @@index([temWhatsApp])
+}
+
+model Interaction {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  canal     Canal
+  descricao String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+enum LeadStatus {
+  NOVO
+  CONTATADO
+  RESPONDEU
+  NEGOCIANDO
+  FECHADO
+  PERDIDO
+}
+
+enum EmailStatus {
+  NAO_BUSCADO
+  BUSCANDO
+  ENCONTRADO
+  NAO_ENCONTRADO
+}
+
+enum Canal {
+  WHATSAPP
+  EMAIL
+  TELEFONE
+  OUTRO
+}
