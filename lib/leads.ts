@@ -106,16 +106,18 @@ export type ListFilter = {
   temWhatsApp?: boolean;
   favorito?: boolean;
   q?: string;
-  /** true = só leads sem telefone, e-mail e site (nenhum contato aparente). */
+  /** true = só leads sem telefone e sem e-mail (nenhum contato direto). */
   semContato?: boolean;
   cursor?: string;
   limit?: number;
 };
 
-/** Nenhum telefone, e-mail nem site: não há como abrir WhatsApp, mandar e-mail ou buscar contato no site. */
+// Ter só site não conta como contato: sem telefone e sem e-mail, ainda falta
+// achar o e-mail (via enriquecimento) ou o número — o site sozinho não abre
+// WhatsApp nem manda mensagem.
+/** Nenhum telefone nem e-mail: não há como abrir WhatsApp ou mandar e-mail direto. */
 const SEM_CONTATO_WHERE: Prisma.LeadWhereInput = {
   telefone: "",
-  site: "",
   OR: [{ email: null }, { email: "" }],
 };
 

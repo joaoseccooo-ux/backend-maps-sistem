@@ -9,7 +9,7 @@ export type Filtro = {
   whatsapp: "" | "com" | "sem";
   favorito: boolean;
   q: string;
-  /** Aba "Sem contato": mostra só leads sem telefone, e-mail ou site. */
+  /** Aba "Sem contato": mostra só leads sem telefone e sem e-mail (site sozinho não conta). */
   semContato: boolean;
 };
 
