@@ -218,13 +218,131 @@ export function iniciarBuscaTodasCategorias(
   return id;
 }
 
+type LoopCidadesEstado = {
+  id: string;
+  tipo: string;
+  estado: string;
+  quantidade: number;
+  label: string;
+  totalOriginal: number;
+  pendentes: string[];
+  criados: number;
+  atualizados: number;
+  falhas: string[];
+};
+
+// Um refresh de página zera qualquer estado em memória (jobs, canceladas —
+// tudo módulo-level em JS). Pra o "percorrer cidades" sobreviver a isso (só
+// deve parar quando alguém clica em "Parar", nunca sozinho), o progresso vai
+// pro localStorage a cada cidade processada, e é retomado no carregamento da
+// página (ver retomarLoopCidadesSeExistir). Só um loop persistido por vez.
+const LOOP_CIDADES_KEY = "leadfinder:loopCidades";
+
+function salvarLoopCidades(s: LoopCidadesEstado) {
+  try {
+    localStorage.setItem(LOOP_CIDADES_KEY, JSON.stringify(s));
+  } catch {
+    // localStorage indisponível (aba privada, storage bloqueado): sem
+    // persistência, mas o loop atual continua rodando normalmente.
+  }
+}
+
+function lerLoopCidades(): LoopCidadesEstado | null {
+  try {
+    const raw = localStorage.getItem(LOOP_CIDADES_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function limparLoopCidades() {
+  try {
+    localStorage.removeItem(LOOP_CIDADES_KEY);
+  } catch {
+    // nada a fazer — pior caso é tentar retomar um loop já concluído, que
+    // reconhece pendentes vazias e sai na hora.
+  }
+}
+
+async function rodarLoopCidades(estadoLoop: LoopCidadesEstado, onDone: () => void) {
+  const { id, tipo, estado, quantidade, label, totalOriginal } = estadoLoop;
+  const canceladoRef = { current: false };
+  canceladas.set(id, canceladoRef);
+
+  if (!jobs.some((j) => j.id === id)) {
+    jobs = [
+      ...jobs,
+      {
+        id,
+        label,
+        atual: totalOriginal - estadoLoop.pendentes.length,
+        total: totalOriginal,
+        categoriaAtual: "",
+        criados: estadoLoop.criados,
+        atualizados: estadoLoop.atualizados,
+        status: "rodando",
+        falhas: [...estadoLoop.falhas],
+      },
+    ];
+    emit();
+  }
+
+  while (estadoLoop.pendentes.length > 0) {
+    if (canceladoRef.current) break;
+    const cidade = estadoLoop.pendentes[0];
+    patch(id, { atual: totalOriginal - estadoLoop.pendentes.length + 1, categoriaAtual: cidade });
+    try {
+      const r = await buscarUmaCategoria(tipo, { estado, cidade, quantidade, estadoInteiro: false });
+      estadoLoop.criados += r.criados || 0;
+      estadoLoop.atualizados += r.atualizados || 0;
+      patch(id, { criados: estadoLoop.criados, atualizados: estadoLoop.atualizados });
+      onDone();
+    } catch (err: any) {
+      // uma cidade falhando não trava o loop — segue pra próxima, mas a
+      // falha precisa aparecer no fim (mesmo motivo do multi-categoria).
+      estadoLoop.falhas.push(`${cidade}: ${err?.message || "erro na busca"}`);
+      patch(id, { falhas: [...estadoLoop.falhas] });
+    }
+    estadoLoop.pendentes.shift();
+    salvarLoopCidades(estadoLoop);
+    if (estadoLoop.pendentes.length > 0 && !canceladoRef.current) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
+  const cancelado = canceladoRef.current;
+  patch(id, { status: cancelado ? "cancelado" : "concluido" });
+  limparLoopCidades();
+
+  const { criados: totalCriados, atualizados: totalAtualizados, falhas } = estadoLoop;
+  const resumoCriados = `${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}`;
+  if (falhas.length > 0) {
+    const amostra = falhas.slice(0, 5).join("; ") + (falhas.length > 5 ? "…" : "");
+    toast.error(
+      `${label}: ${resumoCriados}, mas ${falhas.length} ${
+        falhas.length === 1 ? "cidade falhou" : "cidades falharam"
+      } — ${amostra}`
+    );
+  } else {
+    toast[totalCriados > 0 ? "success" : "info"](
+      cancelado
+        ? `${label} (interrompida): ${resumoCriados}`
+        : `${label}: ${resumoCriados}` +
+            (totalAtualizados > 0 ? ` (${totalAtualizados} já estavam na lista)` : "")
+    );
+  }
+  setTimeout(() => remover(id), falhas.length > 0 ? 12000 : 6000);
+}
+
 /**
  * Percorre TODAS as cidades de um estado buscando uma categoria só, uma
  * cidade por vez — pula cidade que já tem lead dessa categoria salvo (não
  * repete o que já existe) e espera um pouco entre cada chamada pra não
  * exagerar na Nominatim/Overpass (cada cidade geocodifica uma área
  * diferente, então não dá pra reaproveitar como no multi-categoria).
- * Cancelável, roda em background.
+ * Cancelável (só para de verdade no "Parar" — sobrevive a um refresh, ver
+ * retomarLoopCidadesSeExistir). Roda em background.
  */
 export function iniciarBuscaPorCidades(
   tipo: string,
@@ -234,8 +352,6 @@ export function iniciarBuscaPorCidades(
   onDone: () => void
 ) {
   const id = crypto.randomUUID();
-  const canceladoRef = { current: false };
-  canceladas.set(id, canceladoRef);
   const label = `${tipo} em todas as cidades de ${estado}`;
   jobs = [
     ...jobs,
@@ -267,59 +383,42 @@ export function iniciarBuscaPorCidades(
     }
 
     const pendentes = todasAsCidades.filter((c) => !jaFeitas.has(c.toLowerCase()));
-    patch(id, { total: pendentes.length });
 
     if (pendentes.length === 0) {
-      patch(id, { status: "concluido" });
+      patch(id, { status: "concluido", total: 0 });
       toast.info(`${label}: todas as cidades já têm lead dessa categoria.`);
       setTimeout(() => remover(id), 6000);
       return;
     }
 
-    let totalCriados = 0;
-    let totalAtualizados = 0;
-    const falhas: string[] = [];
-    for (let i = 0; i < pendentes.length; i++) {
-      if (canceladoRef.current) break;
-      const cidade = pendentes[i];
-      patch(id, { atual: i + 1, categoriaAtual: cidade });
-      try {
-        const r = await buscarUmaCategoria(tipo, { estado, cidade, quantidade, estadoInteiro: false });
-        totalCriados += r.criados || 0;
-        totalAtualizados += r.atualizados || 0;
-        patch(id, { criados: totalCriados, atualizados: totalAtualizados });
-        onDone();
-      } catch (err: any) {
-        // uma cidade falhando não trava o loop — segue pra próxima, mas a
-        // falha precisa aparecer no fim (mesmo motivo do multi-categoria).
-        falhas.push(`${cidade}: ${err?.message || "erro na busca"}`);
-        patch(id, { falhas: [...falhas] });
-      }
-      if (i < pendentes.length - 1 && !canceladoRef.current) {
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-
-    const cancelado = canceladoRef.current;
-    patch(id, { status: cancelado ? "cancelado" : "concluido" });
-    const resumoCriados = `${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}`;
-    if (falhas.length > 0) {
-      const amostra = falhas.slice(0, 5).join("; ") + (falhas.length > 5 ? "…" : "");
-      toast.error(
-        `${label}: ${resumoCriados}, mas ${falhas.length} ${
-          falhas.length === 1 ? "cidade falhou" : "cidades falharam"
-        } — ${amostra}`
-      );
-    } else {
-      toast[totalCriados > 0 ? "success" : "info"](
-        cancelado
-          ? `${label} (interrompida): ${resumoCriados}`
-          : `${label}: ${resumoCriados}` +
-              (totalAtualizados > 0 ? ` (${totalAtualizados} já estavam na lista)` : "")
-      );
-    }
-    setTimeout(() => remover(id), falhas.length > 0 ? 12000 : 6000);
+    const estadoLoop: LoopCidadesEstado = {
+      id,
+      tipo,
+      estado,
+      quantidade,
+      label,
+      totalOriginal: pendentes.length,
+      pendentes,
+      criados: 0,
+      atualizados: 0,
+      falhas: [],
+    };
+    patch(id, { total: pendentes.length });
+    salvarLoopCidades(estadoLoop);
+    await rodarLoopCidades(estadoLoop, onDone);
   })();
 
   return id;
+}
+
+/**
+ * Retoma um "percorrer cidades" salvo no localStorage — usado ao carregar a
+ * página, pra um refresh no meio do loop não contar como ter parado. Só some
+ * da fila quando terminar de verdade ou alguém clicar em "Parar".
+ */
+export function retomarLoopCidadesSeExistir(onDone: () => void) {
+  const salvo = lerLoopCidades();
+  if (!salvo || salvo.pendentes.length === 0) return;
+  if (jobs.some((j) => j.id === salvo.id)) return; // já rodando (dupla montagem em dev/StrictMode)
+  rodarLoopCidades(salvo, onDone);
 }

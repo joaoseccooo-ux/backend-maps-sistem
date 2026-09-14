@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { iniciarBusca, iniciarBuscaTodasCategorias, iniciarBuscaPorCidades } from "@/lib/search-queue";
+import {
+  iniciarBusca,
+  iniciarBuscaTodasCategorias,
+  iniciarBuscaPorCidades,
+  retomarLoopCidadesSeExistir,
+} from "@/lib/search-queue";
 import { BuscaQueuePanel } from "@/components/leads/busca-queue-panel";
 
 // Ordem = prioridade de quem mais precisa/se beneficia de um site, do maior
@@ -92,6 +97,14 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
   const [erro, setErro] = useState<string | null>(null);
   const [todasCategorias, setTodasCategorias] = useState(false);
   const [percorrerCidades, setPercorrerCidades] = useState(false);
+
+  // Um "percorrer cidades" em andamento sobrevive a um refresh (fica salvo
+  // no localStorage) — ao carregar a página, retoma de onde parou em vez de
+  // simplesmente desaparecer. Só some de fato ao terminar ou clicar "Parar".
+  useEffect(() => {
+    retomarLoopCidadesSeExistir(onDone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!estado) {

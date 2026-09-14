@@ -8,6 +8,8 @@ export type SearchRow = {
   endereco: string;
   telefone: string;
   site: string;
+  /** E-mail já vindo de tag do próprio OSM (email/contact:email) — pode vir vazio. */
+  email: string;
   googleMapsUrl: string;
   lat: number | null;
   lon: number | null;
@@ -29,19 +31,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
 /**
  * Grava os resultados de uma busca. Cria os leads novos e atualiza só os
  * campos de dados (nome/telefone/site/...) dos que já existem — nunca mexe em
- * status, notas, e-mail ou favorito.
+ * status, notas ou favorito. O e-mail é exceção parcial: se o OSM já trouxe
+ * um e-mail e o lead (novo ou existente) ainda não tinha nenhum, preenche
+ * (poupa uma busca de enriquecimento); se já tinha e-mail, não sobrescreve.
  */
 export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta) {
   if (rows.length === 0) return { criados: 0, atualizados: 0 };
 
   const ids = rows.map((r) => r.osmId);
-  const existentes = new Set(
+  const existentes = new Map(
     (
       await prisma.lead.findMany({
         where: { osmId: { in: ids } },
-        select: { osmId: true },
+        select: { osmId: true, email: true },
       })
-    ).map((l) => l.osmId)
+    ).map((l) => [l.osmId, l.email])
   );
 
   const novos = rows.filter((r) => !existentes.has(r.osmId));
@@ -55,6 +59,7 @@ export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta)
         endereco: r.endereco,
         telefone: r.telefone,
         site: r.site,
+        ...(r.email ? { email: r.email, emailStatus: "ENCONTRADO" as const } : {}),
         googleMapsUrl: r.googleMapsUrl,
         lat: r.lat,
         lon: r.lon,
@@ -72,14 +77,16 @@ export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta)
 
   for (const grupo of chunk(atualizar, 50)) {
     await Promise.all(
-      grupo.map((r) =>
-        prisma.lead.update({
+      grupo.map((r) => {
+        const jaTinhaEmail = Boolean(existentes.get(r.osmId));
+        return prisma.lead.update({
           where: { osmId: r.osmId },
           data: {
             nome: r.nome,
             endereco: r.endereco,
             telefone: r.telefone,
             site: r.site,
+            ...(r.email && !jaTinhaEmail ? { email: r.email, emailStatus: "ENCONTRADO" as const } : {}),
             googleMapsUrl: r.googleMapsUrl,
             lat: r.lat,
             lon: r.lon,
@@ -89,8 +96,8 @@ export async function upsertLeadsFromSearch(rows: SearchRow[], meta: SearchMeta)
             temWhatsApp: r.temWhatsApp,
             ...(r.cidade ? { cidade: r.cidade } : {}),
           },
-        })
-      )
+        });
+      })
     );
   }
 

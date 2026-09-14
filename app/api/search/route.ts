@@ -138,8 +138,8 @@ function normalizarSite(site: string): string {
   return /^https?:\/\//i.test(site) ? site : `https://${site}`;
 }
 
-function pontos(l: { telefone: string; site: string }): number {
-  return (l.telefone ? 2 : 0) + (l.site ? 1 : 0);
+function pontos(l: { telefone: string; site: string; email: string }): number {
+  return (l.telefone ? 2 : 0) + (l.email ? 1 : 0) + (l.site ? 1 : 0);
 }
 
 export async function POST(req: Request) {
@@ -266,6 +266,10 @@ export async function POST(req: Request) {
 
     const telefone = primeiro(t.phone || t["contact:phone"] || t["contact:mobile"] || t.mobile);
     const site = normalizarSite(primeiro(t.website || t["contact:website"] || t.url));
+    // O próprio OSM já vem com e-mail em parte dos estabelecimentos — captura
+    // direto aqui, sem depender do enriquecimento (busca separada) pra achar
+    // o que já estava disponível na busca original.
+    const email = primeiro(t.email || t["contact:email"]).toLowerCase();
 
     leads.push({
       osmId: `${el.type}/${el.id}`,
@@ -273,6 +277,7 @@ export async function POST(req: Request) {
       endereco,
       telefone,
       site,
+      email,
       cidade: t["addr:city"] || (estadoInteiro ? "" : String(cidade)),
       googleMapsUrl:
         lat != null && lon != null
@@ -289,7 +294,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // Prospecção: quem tem telefone/site aparece primeiro.
+  // Prospecção: quem tem telefone/site/e-mail aparece primeiro.
   leads.sort((a, b) => pontos(b) - pontos(a) || a.nome.localeCompare(b.nome, "pt-BR"));
 
   const selecionados = leads.slice(0, qtd);
