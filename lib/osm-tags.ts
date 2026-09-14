@@ -96,6 +96,32 @@ const MAPA: Record<string, string[]> = {
   fisioterapia: ['["healthcare"="physiotherapist"]', '["healthcare"]["name"~"fisioterap",i]'],
   psicologo: ['["healthcare"="psychotherapist"]', '["healthcare"]["name"~"psicolog",i]'],
   nutricionista: ['["healthcare"="nutrition_counselling"]', '["healthcare"]["name"~"nutri",i]'],
+
+  // médicos especialistas — usam a tag "healthcare:speciality" (valores em
+  // inglês, padronizados pelo OSM), separada do nome. Filtro direto por essa
+  // tag: já é uma chave rara o suficiente pra não precisar de outra
+  // restrição, e muito mais preciso que procurar a especialidade no nome.
+  cardiologista: ['["healthcare:speciality"~"cardiology",i]'],
+  dermatologista: ['["healthcare:speciality"~"dermatology",i]'],
+  ginecologista: ['["healthcare:speciality"~"gynaecology|gynecology",i]'],
+  pediatra: ['["healthcare:speciality"~"paediatrics|pediatrics",i]'],
+  ortopedista: ['["healthcare:speciality"~"orthopaedics|orthopedics|traumatology",i]'],
+  oftalmologista: ['["healthcare:speciality"~"ophthalmology",i]'],
+  otorrino: ['["healthcare:speciality"~"otolaryngology|otorhinolaryngology",i]'],
+  otorrinolaringologista: ['["healthcare:speciality"~"otolaryngology|otorhinolaryngology",i]'],
+  urologista: ['["healthcare:speciality"~"urology",i]'],
+  endocrinologista: ['["healthcare:speciality"~"endocrinology",i]'],
+  neurologista: ['["healthcare:speciality"~"neurology",i]'],
+  psiquiatra: ['["healthcare:speciality"~"psychiatry",i]'],
+  gastroenterologista: ['["healthcare:speciality"~"gastroenterology",i]'],
+  reumatologista: ['["healthcare:speciality"~"rheumatology",i]'],
+  oncologista: ['["healthcare:speciality"~"oncology",i]'],
+  geriatra: ['["healthcare:speciality"~"geriatrics",i]'],
+  pneumologista: ['["healthcare:speciality"~"pulmonology",i]'],
+  "cirurgiao plastico": ['["healthcare:speciality"~"plastic_surgery",i]'],
+  alergista: ['["healthcare:speciality"~"allergology",i]'],
+  mastologista: ['["healthcare:speciality"~"gynaecology_oncology|mastology",i]'],
+
   otica: ['["shop"="optician"]'],
   "loja de suplementos": ['["shop"="nutrition_supplements"]', '["shop"]["name"~"suplement",i]'],
 

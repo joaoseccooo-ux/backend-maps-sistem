@@ -28,8 +28,14 @@ const SUGESTOES_TIPO = [
   "Consultoria", "Construtora",
 
   // 2) Saúde agendada — cliente busca no Google antes de marcar consulta.
+  // Médicos especialistas entram aqui: pouquíssimos ainda têm site próprio,
+  // e paciente pesquisa antes de marcar — ramo bem propício.
   "Dentista", "Clínica", "Fisioterapia", "Psicólogo", "Nutricionista",
-  "Clínica veterinária",
+  "Cardiologista", "Dermatologista", "Ginecologista", "Pediatra", "Ortopedista",
+  "Oftalmologista", "Otorrinolaringologista", "Urologista", "Endocrinologista",
+  "Neurologista", "Psiquiatra", "Gastroenterologista", "Reumatologista",
+  "Oncologista", "Geriatra", "Pneumologista", "Cirurgião plástico", "Alergista",
+  "Mastologista", "Clínica veterinária",
 
   // 3) Vitrine visual/portfólio — o site é parte do produto de vendas.
   "Estúdio de fotografia", "Hotel", "Pousada", "Espaço de eventos", "Buffet infantil",
