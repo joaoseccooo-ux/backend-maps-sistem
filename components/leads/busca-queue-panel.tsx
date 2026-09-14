@@ -43,14 +43,21 @@ export function BuscaQueuePanel() {
           )}
 
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
+            <p
+              className="text-xs text-muted-foreground"
+              title={job.falhas && job.falhas.length > 0 ? job.falhas.join("\n") : undefined}
+            >
               {job.status === "erro"
                 ? job.erro || "Erro na busca"
-                : job.status === "cancelado"
-                  ? `Parada: ${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"}`
-                  : job.status === "concluido"
-                    ? `Concluída: ${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"}`
-                    : `${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"} até agora`}
+                : job.falhas && job.falhas.length > 0
+                  ? `${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"} — ${
+                      job.falhas.length
+                    } ${job.falhas.length === 1 ? "categoria falhou" : "categorias falharam"}`
+                  : job.status === "cancelado"
+                    ? `Parada: ${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"}`
+                    : job.status === "concluido"
+                      ? `Concluída: ${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"}`
+                      : `${job.criados} ${job.criados === 1 ? "lead novo" : "leads novos"} até agora`}
             </p>
             {job.status === "rodando" && job.total > 1 && (
               <Button

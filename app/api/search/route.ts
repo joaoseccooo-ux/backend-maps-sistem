@@ -38,11 +38,24 @@ type Local = { osmType: string; osmId: number; bbox: number[] };
 
 async function geocodar(q: string): Promise<Local | null> {
   const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`;
-  const res = await fetchComTimeout(
-    url,
-    { headers: { "User-Agent": USER_AGENT, "Accept-Language": "pt-BR" } },
-    10000
-  );
+
+  // Nominatim limita a 1 req/s por IP e devolve 429 quando estoura isso
+  // (comum quando o servidor tá recebendo tráfego de outros usuários do
+  // mesmo host). Tenta de novo respeitando Retry-After antes de desistir.
+  let res: Response;
+  let tentativa = 0;
+  for (;;) {
+    res = await fetchComTimeout(
+      url,
+      { headers: { "User-Agent": USER_AGENT, "Accept-Language": "pt-BR" } },
+      10000
+    );
+    if (res.status !== 429 || tentativa >= 3) break;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const espera = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** tentativa;
+    await new Promise((r) => setTimeout(r, espera));
+    tentativa++;
+  }
   if (!res.ok) throw new Error(`Nominatim respondeu ${res.status}`);
   const arr = (await res.json()) as any[];
   if (!Array.isArray(arr) || arr.length === 0) return null;

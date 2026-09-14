@@ -23,6 +23,7 @@ export type BuscaJob = {
   atualizados: number;
   status: "rodando" | "concluido" | "erro" | "cancelado";
   erro?: string;
+  falhas?: string[];
 };
 
 type Listener = () => void;
@@ -139,6 +140,7 @@ export function iniciarBuscaTodasCategorias(
       criados: 0,
       atualizados: 0,
       status: "rodando",
+      falhas: [],
     },
   ];
   emit();
@@ -146,6 +148,7 @@ export function iniciarBuscaTodasCategorias(
   (async () => {
     let totalCriados = 0;
     let totalAtualizados = 0;
+    const falhas: string[] = [];
     for (let i = 0; i < categorias.length; i++) {
       if (canceladoRef.current) break;
       const categoria = categorias[i];
@@ -156,19 +159,32 @@ export function iniciarBuscaTodasCategorias(
         totalAtualizados += r.atualizados || 0;
         patch(id, { criados: totalCriados, atualizados: totalAtualizados });
         onDone();
-      } catch {
-        // uma categoria falhando não trava o loop inteiro — segue pra próxima.
+      } catch (err: any) {
+        // uma categoria falhando não trava o loop inteiro — segue pra próxima,
+        // mas a falha precisa aparecer no fim, senão "0 leads" parece busca
+        // vazia quando na verdade deu erro (ex.: Nominatim/Overpass fora do ar).
+        falhas.push(`${categoria}: ${err?.message || "erro na busca"}`);
+        patch(id, { falhas: [...falhas] });
       }
     }
     const cancelado = canceladoRef.current;
     patch(id, { status: cancelado ? "cancelado" : "concluido" });
-    toast[totalCriados > 0 ? "success" : "info"](
-      cancelado
-        ? `${label} (interrompida): ${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}`
-        : `${label}: ${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}` +
-            (totalAtualizados > 0 ? ` (${totalAtualizados} já estavam na lista)` : "")
-    );
-    setTimeout(() => remover(id), 6000);
+    const resumoCriados = `${totalCriados} ${totalCriados === 1 ? "lead novo" : "leads novos"}`;
+    if (falhas.length > 0) {
+      toast.error(
+        `${label}: ${resumoCriados}, mas ${falhas.length} ${
+          falhas.length === 1 ? "categoria falhou" : "categorias falharam"
+        } — ${falhas.join("; ")}`
+      );
+    } else {
+      toast[totalCriados > 0 ? "success" : "info"](
+        cancelado
+          ? `${label} (interrompida): ${resumoCriados}`
+          : `${label}: ${resumoCriados}` +
+              (totalAtualizados > 0 ? ` (${totalAtualizados} já estavam na lista)` : "")
+      );
+    }
+    setTimeout(() => remover(id), falhas.length > 0 ? 12000 : 6000);
   })();
 
   return id;
