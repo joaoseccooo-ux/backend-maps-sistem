@@ -7,6 +7,7 @@ export type Filtro = {
   estado: string;
   site: "" | "com" | "sem";
   whatsapp: "" | "com" | "sem";
+  email: "" | "com" | "sem";
   favorito: boolean;
   q: string;
   /** Aba "Sem contato": mostra só leads sem telefone e sem e-mail (site sozinho não conta). */
@@ -20,6 +21,7 @@ export const FILTRO_VAZIO: Filtro = {
   estado: "",
   site: "",
   whatsapp: "",
+  email: "",
   favorito: false,
   q: "",
   semContato: false,
@@ -33,6 +35,7 @@ export function filtroToQuery(f: Filtro, cursor?: string | null): string {
   if (f.estado) p.set("estado", f.estado);
   if (f.site) p.set("site", f.site);
   if (f.whatsapp) p.set("whatsapp", f.whatsapp);
+  if (f.email) p.set("email", f.email);
   if (f.favorito) p.set("favorito", "1");
   if (f.q) p.set("q", f.q);
   if (f.semContato) p.set("semContato", "1");
@@ -48,6 +51,7 @@ export function filtroAtivo(f: Filtro): boolean {
     !!f.estado ||
     !!f.site ||
     !!f.whatsapp ||
+    !!f.email ||
     f.favorito ||
     !!f.q
   );

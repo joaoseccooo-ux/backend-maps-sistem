@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     categoria: sp.get("categoria") || undefined,
     temSite: triState(sp.get("site")),
     temWhatsApp: triState(sp.get("whatsapp")),
+    temEmail: triState(sp.get("email")),
     favorito: sp.get("favorito") === "1" ? true : undefined,
     q: sp.get("q") || undefined,
     semContato: sp.get("semContato") === "1" ? true : undefined,

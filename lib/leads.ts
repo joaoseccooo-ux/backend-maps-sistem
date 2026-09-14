@@ -112,6 +112,7 @@ export type ListFilter = {
   categoria?: string;
   temSite?: boolean;
   temWhatsApp?: boolean;
+  temEmail?: boolean;
   favorito?: boolean;
   q?: string;
   /** true = só leads sem telefone e sem e-mail (nenhum contato direto). */
@@ -142,6 +143,9 @@ export async function listLeads(filtro: ListFilter) {
   if (filtro.categoria) where.categoria = filtro.categoria;
   if (typeof filtro.temSite === "boolean") where.temSite = filtro.temSite;
   if (typeof filtro.temWhatsApp === "boolean") where.temWhatsApp = filtro.temWhatsApp;
+  // email nunca é salvo como "" (só null ou um endereço real — ver
+  // upsertLeadsFromSearch), então "not: null" já cobre "com e-mail" certo.
+  if (typeof filtro.temEmail === "boolean") where.email = filtro.temEmail ? { not: null } : null;
   if (typeof filtro.favorito === "boolean") where.favorito = filtro.favorito;
   if (filtro.q) where.nome = { contains: filtro.q, mode: "insensitive" };
   if (filtro.semContato) {

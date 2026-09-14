@@ -82,6 +82,18 @@ export function LeadFilters({
         />
       </Grupo>
 
+      <Grupo titulo="E-mail">
+        <SegRadio
+          value={filtro.email}
+          onChange={(v) => set({ email: v as Filtro["email"] })}
+          opcoes={[
+            ["", "Todos"],
+            ["com", "Com"],
+            ["sem", "Sem"],
+          ]}
+        />
+      </Grupo>
+
       {facetas && facetas.estados.length > 0 && (
         <Grupo titulo={estadoLabel}>
           <select
