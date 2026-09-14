@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Search, X } from "lucide-react";
 import { ESTADOS } from "@/data/estados";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,9 +80,12 @@ const SUGESTOES_TIPO = [
   "Agência de marketing digital",
 ];
 
+const QUANTIDADE_MAX = 500;
+
 export function SearchDialog({ onDone }: { onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [tipo, setTipo] = useState("");
+  const [categorias, setCategorias] = useState<string[]>([]);
   const [estado, setEstado] = useState("");
   const [cidade, setCidade] = useState("");
   const [cidades, setCidades] = useState<string[]>([]);
@@ -121,6 +124,27 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
     };
   }, [estado]);
 
+  // Adiciona o texto digitado como mais uma categoria (chip), sem apagar as
+  // que já foram adicionadas — é o que permite juntar "psicologia" +
+  // "cardiologia" + "advogado" numa busca só.
+  function adicionarCategoria() {
+    const v = tipo.trim();
+    if (!v) return;
+    setCategorias((prev) => (prev.some((c) => c.toLowerCase() === v.toLowerCase()) ? prev : [...prev, v]));
+    setTipo("");
+  }
+
+  function removerCategoria(c: string) {
+    setCategorias((prev) => prev.filter((x) => x !== c));
+  }
+
+  function handleTipoKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      adicionarCategoria();
+    }
+  }
+
   // Só valida e dispara — não espera a busca terminar. O job roda em segundo
   // plano na fila compartilhada (lib/search-queue.ts), então o diálogo fecha
   // na hora e já dá pra abrir de novo e mandar outra busca em paralelo.
@@ -129,20 +153,34 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
     if (!estado) return setErro("Selecione o estado.");
     if (!estadoInteiro && !cidade.trim())
       return setErro('Escolha a cidade ou marque "estado inteiro".');
-    if (!todasCategorias && !tipo.trim())
-      return setErro("Preencha o tipo de negócio.");
 
     setErro(null);
     const params = { estado, cidade, quantidade, estadoInteiro };
+    const local = estadoInteiro ? estado : `${cidade}, ${estado}`;
 
     if (todasCategorias) {
-      iniciarBuscaTodasCategorias(SUGESTOES_TIPO, params, onDone);
+      iniciarBuscaTodasCategorias(SUGESTOES_TIPO, params, onDone, `Todas as categorias em ${local}`);
     } else {
-      iniciarBusca(tipo, params, onDone);
+      // O que ainda está no campo de texto (não confirmado com Enter/+)
+      // entra na busca também — não obriga a clicar em "+" pra um tipo só.
+      const pendente = tipo.trim();
+      const todas = pendente && !categorias.some((c) => c.toLowerCase() === pendente.toLowerCase())
+        ? [...categorias, pendente]
+        : categorias;
+
+      if (todas.length === 0) return setErro("Preencha ao menos um tipo de negócio.");
+
+      if (todas.length === 1) {
+        iniciarBusca(todas[0], params, onDone);
+      } else {
+        const label = todas.length <= 4 ? `${todas.join(", ")} em ${local}` : `${todas.length} categorias em ${local}`;
+        iniciarBuscaTodasCategorias(todas, params, onDone, label);
+      }
     }
 
     setOpen(false);
     setTipo("");
+    setCategorias([]);
   }
 
   return (
@@ -166,19 +204,55 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="tipo">Tipo de negócio</Label>
-              <Input
-                id="tipo"
-                list="sugestoes-tipo"
-                value={tipo}
-                disabled={todasCategorias}
-                onChange={(e) => setTipo(e.target.value)}
-                placeholder="Ex: restaurante, petshop, marmoraria…"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="tipo"
+                  list="sugestoes-tipo"
+                  value={tipo}
+                  disabled={todasCategorias}
+                  onChange={(e) => setTipo(e.target.value)}
+                  onKeyDown={handleTipoKeyDown}
+                  placeholder="Ex: psicólogo, cardiologista, advogado…"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={todasCategorias || !tipo.trim()}
+                  onClick={adicionarCategoria}
+                >
+                  Adicionar
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Dá pra buscar várias categorias de uma vez: digite uma, aperte Enter ou
+                &quot;Adicionar&quot;, e repita. Cada uma roda em sequência.
+              </p>
               <datalist id="sugestoes-tipo">
                 {SUGESTOES_TIPO.map((s) => (
                   <option key={s} value={s} />
                 ))}
               </datalist>
+
+              {categorias.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {categorias.map((c) => (
+                    <span
+                      key={c}
+                      className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+                    >
+                      {c}
+                      <button
+                        type="button"
+                        onClick={() => removerCategoria(c)}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={`Remover ${c}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <label className="flex items-start gap-2 text-sm">
@@ -263,18 +337,23 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
 
             {!estadoInteiro && (
               <div className="space-y-1.5">
-                <Label htmlFor="qtd">Quantidade (até 40)</Label>
+                <Label htmlFor="qtd">Quantidade (até {QUANTIDADE_MAX})</Label>
                 <Input
                   id="qtd"
                   type="number"
                   min={1}
-                  max={40}
+                  max={QUANTIDADE_MAX}
                   value={quantidade}
                   onChange={(e) =>
-                    setQuantidade(Math.min(40, Math.max(1, Number(e.target.value) || 1)))
+                    setQuantidade(Math.min(QUANTIDADE_MAX, Math.max(1, Number(e.target.value) || 1)))
                   }
                   className="w-28"
                 />
+                {quantidade > 40 && (
+                  <p className="text-xs text-muted-foreground">
+                    Pedidos grandes trazem mais elementos do Overpass e podem demorar mais.
+                  </p>
+                )}
               </div>
             )}
 
@@ -282,7 +361,11 @@ export function SearchDialog({ onDone }: { onDone: () => void }) {
 
             <Button type="submit" className="w-full gap-2">
               <Search className="h-4 w-4" />
-              {todasCategorias ? "Buscar todas as categorias" : "Buscar"}
+              {todasCategorias
+                ? "Buscar todas as categorias"
+                : categorias.length > 0
+                  ? `Buscar ${categorias.length + (tipo.trim() ? 1 : 0)} categorias`
+                  : "Buscar"}
             </Button>
           </form>
         </DialogContent>

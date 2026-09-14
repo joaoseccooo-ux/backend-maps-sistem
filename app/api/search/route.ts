@@ -148,7 +148,7 @@ export async function POST(req: Request) {
   const uf = ESTADOS.find((e) => e.sigla === estado);
   const estadoNome = uf?.nome || String(estado);
   // No modo "estado inteiro" ignoramos o campo quantidade e trazemos tudo até um teto.
-  const qtd = estadoInteiro ? 1500 : Math.min(Math.max(Number(quantidade) || 20, 1), 40);
+  const qtd = estadoInteiro ? 1500 : Math.min(Math.max(Number(quantidade) || 20, 1), 500);
 
   const { filters, matched } = resolveOsmFilters(String(tipo));
   if (filters.length === 0) {
@@ -186,10 +186,14 @@ export async function POST(req: Request) {
     );
   }
 
+  // O teto de linhas que o Overpass devolve precisa acompanhar "qtd": pedir
+  // 200 leads não adianta se o Overpass já corta em 300 elementos brutos
+  // (antes de ordenar por quem tem telefone/site e fatiar). Margem de 2x
+  // porque nem todo elemento devolvido vira lead (nome vazio, duplicata).
   const query = montarQuery(
     loc,
     filters,
-    estadoInteiro ? 3000 : 300,
+    estadoInteiro ? 3000 : Math.max(qtd * 2, 300),
     estadoInteiro ? 90 : 50
   );
 

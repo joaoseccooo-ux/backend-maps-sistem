@@ -114,16 +114,20 @@ export function iniciarBusca(tipo: string, params: BuscaParams, onDone: () => vo
   return id;
 }
 
-/** Dispara a varredura de todas as categorias. Também roda em background. */
+/**
+ * Dispara uma varredura por várias categorias em sequência (uma de cada vez,
+ * pra não sobrecarregar o Overpass) — usado tanto por "todas as categorias"
+ * quanto por uma seleção manual de 2+ categorias. Roda em background.
+ */
 export function iniciarBuscaTodasCategorias(
   categorias: string[],
   params: BuscaParams,
-  onDone: () => void
+  onDone: () => void,
+  label: string
 ) {
   const id = crypto.randomUUID();
   const canceladoRef = { current: false };
   canceladas.set(id, canceladoRef);
-  const label = `Todas categorias em ${params.estadoInteiro ? params.estado : `${params.cidade}, ${params.estado}`}`;
   jobs = [
     ...jobs,
     {
