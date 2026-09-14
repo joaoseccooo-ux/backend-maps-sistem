@@ -28,21 +28,18 @@ const SUGESTOES_TIPO = [
   "Consultoria", "Construtora",
 
   // 2) Saúde agendada — cliente busca no Google antes de marcar consulta.
-  // Médicos especialistas entram aqui: pouquíssimos ainda têm site próprio,
-  // e paciente pesquisa antes de marcar — ramo bem propício.
+  // "Médico especialista" junta cardiologista, dermatologista, pediatra etc.
+  // numa categoria só (todos usam a mesma tag de especialidade no OSM); pra
+  // uma especialidade específica, basta digitar o nome dela direto no campo.
   "Dentista", "Clínica", "Fisioterapia", "Psicólogo", "Nutricionista",
-  "Cardiologista", "Dermatologista", "Ginecologista", "Pediatra", "Ortopedista",
-  "Oftalmologista", "Otorrinolaringologista", "Urologista", "Endocrinologista",
-  "Neurologista", "Psiquiatra", "Gastroenterologista", "Reumatologista",
-  "Oncologista", "Geriatra", "Pneumologista", "Cirurgião plástico", "Alergista",
-  "Mastologista", "Clínica veterinária",
+  "Médico especialista", "Clínica veterinária",
 
   // 3) Vitrine visual/portfólio — o site é parte do produto de vendas.
   "Estúdio de fotografia", "Hotel", "Pousada", "Espaço de eventos", "Buffet infantil",
 
   // 4) Beleza e bem-estar agendados — hoje vivem só de Instagram/WhatsApp,
   // um site profissionaliza e facilita agendamento.
-  "Salão de beleza", "Barbearia", "Estética", "Design de sobrancelhas", "Depilação",
+  "Salão de beleza", "Barbearia", "Estética",
   "Estúdio de tatuagem", "Academia", "Estúdio de pilates", "Escola de dança",
 
   // 5) Comida com encomenda/cardápio — cardápio e delivery no site ajudam.

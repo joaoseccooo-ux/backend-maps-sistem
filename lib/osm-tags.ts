@@ -122,6 +122,11 @@ const MAPA: Record<string, string[]> = {
   alergista: ['["healthcare:speciality"~"allergology",i]'],
   mastologista: ['["healthcare:speciality"~"gynaecology_oncology|mastology",i]'],
 
+  // Categoria guarda-chuva: junta todas as especialidades acima numa busca só
+  // (qualquer valor de "healthcare:speciality"). As chaves individuais continuam
+  // valendo pra quem digitar uma especialidade específica.
+  "medico especialista": ['["healthcare:speciality"]'],
+
   otica: ['["shop"="optician"]'],
   "loja de suplementos": ['["shop"="nutrition_supplements"]', '["shop"]["name"~"suplement",i]'],
 

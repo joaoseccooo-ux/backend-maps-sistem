@@ -3,17 +3,22 @@ import { ESTADOS } from "@/data/estados";
 import { resolveOsmFilters, normalizar } from "@/lib/osm-tags";
 import { toWhatsAppLink } from "@/lib/phone";
 import { upsertLeadsFromSearch, type SearchRow } from "@/lib/leads";
+import { geocodar, nomeLocalParaGeocodar, type Local } from "@/lib/geocode";
+import { fetchComTimeout, USER_AGENT } from "@/lib/osm-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Fonte dos dados: OpenStreetMap.
-// - Nominatim: transforma "cidade, estado, Brasil" na área geográfica.
+// - Nominatim (lib/geocode.ts): transforma "cidade, estado, Brasil" na área
+//   geográfica. Quem dispara várias categorias de uma vez (lib/search-queue.ts)
+//   geocodifica uma única vez via /api/geocode e manda o resultado pronto no
+//   campo "loc" abaixo — sem isso, cada categoria bateria de novo na Nominatim
+//   e estourava o limite de 1 req/s dela.
 // - Overpass: lista os estabelecimentos daquela área que batem com o tipo.
 // Sem chave de API, sem cadastro, sem cartão. Só código.
 
-const NOMINATIM = "https://nominatim.openstreetmap.org/search";
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
@@ -21,51 +26,16 @@ const OVERPASS_ENDPOINTS = [
   "https://overpass.osm.ch/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
-const USER_AGENT = "BuscadorDeLeads/1.0 (prospeccao local B2B)";
 
-/** fetch com timeout — evita que um servidor lento trave a requisição inteira. */
-async function fetchComTimeout(url: string, init: RequestInit, ms: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-type Local = { osmType: string; osmId: number; bbox: number[] };
-
-async function geocodar(q: string): Promise<Local | null> {
-  const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=br`;
-
-  // Nominatim limita a 1 req/s por IP e devolve 429 quando estoura isso
-  // (comum quando o servidor tá recebendo tráfego de outros usuários do
-  // mesmo host). Tenta de novo respeitando Retry-After antes de desistir.
-  let res: Response;
-  let tentativa = 0;
-  for (;;) {
-    res = await fetchComTimeout(
-      url,
-      { headers: { "User-Agent": USER_AGENT, "Accept-Language": "pt-BR" } },
-      10000
-    );
-    if (res.status !== 429 || tentativa >= 3) break;
-    const retryAfter = Number(res.headers.get("retry-after"));
-    const espera = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** tentativa;
-    await new Promise((r) => setTimeout(r, espera));
-    tentativa++;
-  }
-  if (!res.ok) throw new Error(`Nominatim respondeu ${res.status}`);
-  const arr = (await res.json()) as any[];
-  if (!Array.isArray(arr) || arr.length === 0) return null;
-  const hit = arr[0];
-  return {
-    osmType: String(hit.osm_type),
-    osmId: Number(hit.osm_id),
-    // boundingbox vem como [sul, norte, oeste, leste] em strings
-    bbox: (hit.boundingbox as string[]).map(Number),
-  };
+function locValido(v: any): v is Local {
+  return (
+    v &&
+    typeof v.osmType === "string" &&
+    typeof v.osmId === "number" &&
+    Array.isArray(v.bbox) &&
+    v.bbox.length === 4 &&
+    v.bbox.every((n: any) => typeof n === "number")
+  );
 }
 
 function montarQuery(
@@ -180,15 +150,21 @@ export async function POST(req: Request) {
   }
 
   let loc: Local | null;
-  try {
-    loc = estadoInteiro
-      ? await geocodar(`${estadoNome}, Brasil`)
-      : await geocodar(`${cidade}, ${estadoNome}, Brasil`);
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: `Falha ao localizar a região: ${err?.message || "erro desconhecido"}` },
-      { status: 502 }
-    );
+  if (locValido(body?.loc)) {
+    // Já vem geocodificado pelo cliente (busca multi-categoria: geocodifica
+    // uma vez via /api/geocode e reaproveita pra todas as categorias da
+    // rodada, em vez de bater na Nominatim de novo em cada uma).
+    loc = body.loc;
+  } else {
+    try {
+      loc = await geocodar(nomeLocalParaGeocodar(String(cidade || ""), String(estado), estadoInteiro));
+    } catch (err: any) {
+      console.error("[search] falha ao geocodificar:", err?.message || err);
+      return NextResponse.json(
+        { error: `Falha ao localizar a região: ${err?.message || "erro desconhecido"}` },
+        { status: 502 }
+      );
+    }
   }
   if (!loc) {
     return NextResponse.json(
@@ -220,6 +196,7 @@ export async function POST(req: Request) {
   try {
     elementos = await rodarOverpass(query, estadoInteiro ? 105000 : 65000);
   } catch (err: any) {
+    console.error("[search] falha no Overpass:", err?.message || err);
     return NextResponse.json({ error: err?.message || "Erro ao consultar o OpenStreetMap." }, { status: 502 });
   }
 

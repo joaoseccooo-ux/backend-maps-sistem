@@ -69,15 +69,32 @@ export function useBuscaJobs(): BuscaJob[] {
   );
 }
 
-async function buscarUmaCategoria(tipo: string, params: BuscaParams) {
+async function buscarUmaCategoria(tipo: string, params: BuscaParams, loc?: unknown) {
   const res = await fetch("/api/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tipo, ...params }),
+    body: JSON.stringify({ tipo, ...params, ...(loc ? { loc } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Erro ao buscar "${tipo}".`);
   return data as { criados?: number; atualizados?: number };
+}
+
+/**
+ * Geocodifica a cidade/estado uma vez só. Usado antes de rodar várias
+ * categorias em sequência: sem isso, cada categoria bateria de novo na
+ * Nominatim pra resolver a MESMA área, estourando o limite de 1 req/s dela
+ * (era isso que fazia buscas de várias categorias voltarem cheias de erro).
+ */
+async function geocodarUmaVez(params: BuscaParams) {
+  const res = await fetch("/api/geocode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Erro ao localizar a região.");
+  return data.loc;
 }
 
 /** Dispara uma busca de uma categoria só. Não bloqueia — roda em background. */
@@ -146,6 +163,17 @@ export function iniciarBuscaTodasCategorias(
   emit();
 
   (async () => {
+    let loc: unknown;
+    try {
+      loc = await geocodarUmaVez(params);
+    } catch (err: any) {
+      const erro = err?.message || "Erro ao localizar a região.";
+      patch(id, { status: "erro", erro });
+      toast.error(`${label}: ${erro}`);
+      setTimeout(() => remover(id), 6000);
+      return;
+    }
+
     let totalCriados = 0;
     let totalAtualizados = 0;
     const falhas: string[] = [];
@@ -154,7 +182,7 @@ export function iniciarBuscaTodasCategorias(
       const categoria = categorias[i];
       patch(id, { atual: i + 1, categoriaAtual: categoria });
       try {
-        const r = await buscarUmaCategoria(categoria, params);
+        const r = await buscarUmaCategoria(categoria, params, loc);
         totalCriados += r.criados || 0;
         totalAtualizados += r.atualizados || 0;
         patch(id, { criados: totalCriados, atualizados: totalAtualizados });
